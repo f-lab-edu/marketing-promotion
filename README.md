@@ -10,8 +10,11 @@
 [Use Case 위키](https://github.com/f-lab-edu/marketing-promotion/wiki/Use-Case)
 
 ## 3. Flow Chart
+[Flow Chart 위키](https://github.com/f-lab-edu/marketing-promotion/wiki/Flow-Chart)
 
 ## 4. 기능 구조도
+[기능 구조도 위키](https://github.com/f-lab-edu/marketing-promotion/wiki/%EA%B8%B0%EB%8A%A5-%EA%B5%AC%EC%A1%B0%EB%8F%84)
+
 
 ## 5. ERD
-https://app.diagrams.net/#G1HQSQKTQUeqworksaMVQbKqjqfPWWEqP_#%7B%22pageId%22%3A%22l2j7YGflX5Q0iSekINy0%22%7D
+[ERD 전체](https://app.diagrams.net/#G1HQSQKTQUeqworksaMVQbKqjqfPWWEqP_#%7B%22pageId%22%3A%22l2j7YGflX5Q0iSekINy0%22%7D)
