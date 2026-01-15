@@ -18,3 +18,4 @@
 
 ## 5. ERD
 [ERD 전체](https://app.diagrams.net/#G1HQSQKTQUeqworksaMVQbKqjqfPWWEqP_#%7B%22pageId%22%3A%22l2j7YGflX5Q0iSekINy0%22%7D)
+![alt](https://github.com/f-lab-edu/marketing-promotion/blob/main/images/erd/전체_ERD.png)
