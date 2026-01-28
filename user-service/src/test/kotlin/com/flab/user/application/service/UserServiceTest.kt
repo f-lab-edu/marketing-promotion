@@ -1,80 +1,92 @@
 package com.flab.user.application.service
 
-import com.flab.user.common.exception.DuplicatedEmailException
-import com.flab.user.domain.User
-import com.flab.user.domain.UserStatus
+import com.flab.user.application.UserService
+import com.flab.user.config.exception.BusinessException
+import com.flab.user.config.exception.MessageCode
+import com.flab.user.domain.dto.SignUpRequest
 import com.flab.user.infrastructure.persistence.UserRepository
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.extensions.spring.SpringExtension
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
-import io.mockk.clearAllMocks
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.verify
-import org.springframework.security.crypto.password.PasswordEncoder
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.test.context.ActiveProfiles
+import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDate
 
-class UserServiceTest : StringSpec({
+@SpringBootTest
+@ActiveProfiles("test")
+@Transactional
+class UserServiceTest(
+    private val userService: UserService,
+    private val userRepository: UserRepository
+) : StringSpec({
 
-    val userRepository = mockk<UserRepository>()
-    val passwordEncoder = mockk<PasswordEncoder>()
-    val userService = UserService(userRepository, passwordEncoder)
+    extension(SpringExtension)
 
-    beforeTest {
-        clearAllMocks()
-    }
-
-    /*"회원가입 성공" {
+    "회원가입 성공" {
         // given
-        val email = "test@test.com"
-        val name = "홍길동"
-        val password = "password123"
-        val encodedPassword = "encodedPassword123"
-
-        every { userRepository.existsByEmail(email) } returns false
-        every { passwordEncoder.encode(password) } returns encodedPassword
-        every { userRepository.save(any()) } answers {
-            val user = firstArg<User>()
-            User(
-                id = 1L,
-                email = user.email,
-                name = user.name,
-                password = user.password,
-                status = user.status,
-                createdAt = user.createdAt,
-                updatedAt = user.updatedAt
-            )
-        }
+        val request = SignUpRequest(
+            email = "test@test.com",
+            name = "홍길동",
+            birthDate = LocalDate.of(1990, 1, 1),
+            password = "Password1!"
+        )
 
         // when
-        val result = userService.signUp(email, name, password)
+        val response = userService.signUp(request)
 
         // then
-        result.id shouldNotBe null
-        result.email shouldBe email
-        result.name shouldBe name
-        result.password shouldBe encodedPassword
-        result.status shouldBe UserStatus.ACTIVE
+        response.userId shouldNotBe null
 
-        verify(exactly = 1) { userRepository.existsByEmail(email) }
-        verify(exactly = 1) { passwordEncoder.encode(password) }
-        verify(exactly = 1) { userRepository.save(any()) }
+        val savedUser = userRepository.findById(response.userId).orElse(null)
+        savedUser shouldNotBe null
+        savedUser.email shouldBe request.email
+        savedUser.name shouldBe request.name
+        savedUser.birthDate shouldBe request.birthDate
     }
 
     "이메일 중복 시 예외 발생" {
         // given
-        val email = "duplicate@test.com"
-        val name = "홍길동"
-        val password = "password123"
+        val request = SignUpRequest(
+            email = "duplicate@test.com",
+            name = "홍길동",
+            birthDate = LocalDate.of(1990, 1, 1),
+            password = "Password1!"
+        )
+        userService.signUp(request)
 
-        every { userRepository.existsByEmail(email) } returns true
+        val duplicateRequest = SignUpRequest(
+            email = "duplicate@test.com",
+            name = "김철수",
+            birthDate = LocalDate.of(1995, 5, 5),
+            password = "Password2!"
+        )
 
         // when & then
-        shouldThrow<DuplicatedEmailException> {
-            userService.signUp(email, name, password)
+        val exception = shouldThrow<BusinessException> {
+            userService.signUp(duplicateRequest)
         }
 
-        verify(exactly = 1) { userRepository.existsByEmail(email) }
-        verify(exactly = 0) { userRepository.save(any()) }
-    }*/
+        exception.messageCode shouldBe MessageCode.DUPLICATED_EMAIL
+    }
+
+    "회원가입 시 비밀번호가 암호화되어 저장된다" {
+        // given
+        val rawPassword = "Password1!"
+        val request = SignUpRequest(
+            email = "encrypt@test.com",
+            name = "암호화테스트",
+            birthDate = LocalDate.of(1990, 1, 1),
+            password = rawPassword
+        )
+
+        // when
+        val response = userService.signUp(request)
+
+        // then
+        val savedUser = userRepository.findById(response.userId).orElse(null)
+        savedUser.password shouldNotBe rawPassword
+    }
 })
