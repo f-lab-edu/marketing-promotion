@@ -33,7 +33,7 @@ class AuthService(
 ) {
     private val passwordEncoder = BCryptPasswordEncoder()
 
-    @Transactional(noRollbackFor = [Exception::class])
+    @Transactional(noRollbackFor = [BusinessException::class])
     fun login(request: LoginRequest, ip: String?, userAgent: String?): LoginResult {
         val user = userRepository.findByEmail(request.email) ?: throw BusinessException(MessageCode.USER_NOT_FOUND)
 
