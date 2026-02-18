@@ -1,6 +1,6 @@
 package com.flab.user.domain.mapper
 
-import com.flab.user.domain.entity.User
+import com.flab.user.domain.entity.persistence.User
 import com.flab.user.domain.dto.SignUpRequest
 import com.flab.user.domain.dto.SignUpResponse
 import org.mapstruct.Mapper
@@ -14,7 +14,8 @@ interface UserMapper {
     @Mappings(
         Mapping(target = "password", source = "encodedPassword"),
         Mapping(target = "id", ignore = true),
-        Mapping(target = "status", expression = "java(com.flab.user.domain.entity.UserStatus.ACTIVE)"),
+        Mapping(target = "status", expression = "java(com.flab.user.domain.enums.UserStatus.ACTIVE)"),
+        Mapping(target = "role", expression = "java(com.flab.user.domain.enums.UserRole.USER)"),
         Mapping(target = "createdAt", expression = "java(java.time.LocalDateTime.now())"),
         Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now())"),
         Mapping(target = "createdBy", constant = "0L"),

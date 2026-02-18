@@ -15,5 +15,23 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: user-service-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  mongodb:
+    image: mongo:7.0
+    container_name: user-service-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
 volumes:
   mysql_data:
+  redis_data:
+  mongodb_data:

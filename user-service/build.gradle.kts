@@ -29,6 +29,11 @@ dependencies {
 	implementation("io.github.oshai:kotlin-logging-jvm:5.1.4")
 	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.4")
 	implementation("org.mapstruct:mapstruct:1.5.5.Final")
+	implementation("io.jsonwebtoken:jjwt-api:0.12.6")
+	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
+	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
+	implementation("org.springframework.boot:spring-boot-starter-data-redis")
+	implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
 	kapt("org.mapstruct:mapstruct-processor:1.5.5.Final")
 	runtimeOnly("com.h2database:h2")
 	runtimeOnly("com.mysql:mysql-connector-j")
@@ -40,6 +45,8 @@ dependencies {
 	testImplementation("io.kotest:kotest-assertions-core:5.9.1")
 	testImplementation("io.kotest.extensions:kotest-extensions-spring:1.3.0")
 	testImplementation("io.mockk:mockk:1.13.13")
+	testImplementation("com.github.fppt:jedis-mock:1.1.4")
+	testImplementation("de.flapdoodle.embed:de.flapdoodle.embed.mongo.spring3x:4.12.3")
 }
 
 dependencyManagement {
