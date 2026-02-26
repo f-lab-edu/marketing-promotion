@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: promotion-batch
+  main:
+    web-application-type: none    # 웹 서버 미기동 (순수 배치 실행 후 JVM 종료)
+  datasource:
+    url: jdbc:mysql://localhost:3306/promotion_service?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: user
+    password: password
+  jpa:
+    hibernate:
+      ddl-auto: none              # 스키마 변경 금지 (promotion-service 가 관리)
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+  batch:
+    job:
+      enabled: true               # 기동 즉시 배치 실행 후 종료
+    jdbc:
+      initialize-schema: always   # Spring Batch 메타 테이블 자동 생성
+  kafka:
+    bootstrap-servers: kafka1:9092,kafka2:9092,kafka3:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5

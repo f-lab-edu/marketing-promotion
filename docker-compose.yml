@@ -1,0 +1,259 @@
+networks:
+  app-network:
+    driver: bridge
+
+services:
+
+  # =================== MySQL ===================
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    networks:
+      - app-network
+
+  # =================== MongoDB ===================
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+
+  # =================== Redis Sentinel ===================
+  # master/replica 는 bitnami 이미지 사용 (환경변수 기반 설정, 공식 이미지보다 Sentinel 구성이 간편)
+  redis-master:
+    image: bitnami/redis:7.4
+    container_name: redis-master
+    ports:
+      - "6379:6379"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      REDIS_REPLICATION_MODE: master
+    volumes:
+      - redis_master_data:/bitnami/redis/data
+    networks:
+      - app-network
+
+  redis-replica1:
+    image: bitnami/redis:7.4
+    container_name: redis-replica1
+    ports:
+      - "6380:6379"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      REDIS_REPLICATION_MODE: slave
+      REDIS_MASTER_HOST: redis-master
+      REDIS_MASTER_PORT_NUMBER: "6379"
+    networks:
+      - app-network
+    depends_on:
+      - redis-master
+
+  redis-replica2:
+    image: bitnami/redis:7.4
+    container_name: redis-replica2
+    ports:
+      - "6381:6379"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      REDIS_REPLICATION_MODE: slave
+      REDIS_MASTER_HOST: redis-master
+      REDIS_MASTER_PORT_NUMBER: "6379"
+    networks:
+      - app-network
+    depends_on:
+      - redis-master
+
+  # Sentinel 3대: 과반수(2) 합의로 장애 감지 및 failover 결정
+  # 내부 포트는 모두 26379, 호스트 포트만 다르게 노출 (26379/26380/26381)
+  redis-sentinel1:
+    image: bitnami/redis-sentinel:7.4
+    container_name: redis-sentinel1
+    ports:
+      - "26379:26379"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      REDIS_MASTER_HOST: redis-master
+      REDIS_MASTER_PORT_NUMBER: "6379"
+      REDIS_SENTINEL_MASTER_NAME: mymaster
+      REDIS_SENTINEL_QUORUM: "2"
+      REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS: "5000"
+      REDIS_SENTINEL_FAILOVER_TIMEOUT: "60000"
+      REDIS_SENTINEL_PARALLEL_SYNCS: "1"
+    networks:
+      - app-network
+    depends_on:
+      - redis-master
+      - redis-replica1
+      - redis-replica2
+
+  redis-sentinel2:
+    image: bitnami/redis-sentinel:7.4
+    container_name: redis-sentinel2
+    ports:
+      - "26380:26379"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      REDIS_MASTER_HOST: redis-master
+      REDIS_MASTER_PORT_NUMBER: "6379"
+      REDIS_SENTINEL_MASTER_NAME: mymaster
+      REDIS_SENTINEL_QUORUM: "2"
+      REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS: "5000"
+      REDIS_SENTINEL_FAILOVER_TIMEOUT: "60000"
+      REDIS_SENTINEL_PARALLEL_SYNCS: "1"
+    networks:
+      - app-network
+    depends_on:
+      - redis-master
+      - redis-replica1
+      - redis-replica2
+
+  redis-sentinel3:
+    image: bitnami/redis-sentinel:7.4
+    container_name: redis-sentinel3
+    ports:
+      - "26381:26379"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      REDIS_MASTER_HOST: redis-master
+      REDIS_MASTER_PORT_NUMBER: "6379"
+      REDIS_SENTINEL_MASTER_NAME: mymaster
+      REDIS_SENTINEL_QUORUM: "2"
+      REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS: "5000"
+      REDIS_SENTINEL_FAILOVER_TIMEOUT: "60000"
+      REDIS_SENTINEL_PARALLEL_SYNCS: "1"
+    networks:
+      - app-network
+    depends_on:
+      - redis-master
+      - redis-replica1
+      - redis-replica2
+
+  # =================== ZooKeeper ===================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    networks:
+      - app-network
+
+  # =================== Kafka Cluster (3 brokers) ===================
+  # INTERNAL 리스너: Docker 네트워크 내 서비스 간 통신 (kafka1:9092 등)
+  # EXTERNAL 리스너: 호스트에서 직접 접근 (localhost:29092 등)
+  kafka1:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka1
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka1_data:/var/lib/kafka/data
+    networks:
+      - app-network
+    depends_on:
+      - zookeeper
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka2
+    ports:
+      - "29093:29093"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:29093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka2:9092,EXTERNAL://localhost:29093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka2_data:/var/lib/kafka/data
+    networks:
+      - app-network
+    depends_on:
+      - zookeeper
+
+  kafka3:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka3
+    ports:
+      - "29094:29094"
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:29094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka3:9092,EXTERNAL://localhost:29094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka3_data:/var/lib/kafka/data
+    networks:
+      - app-network
+    depends_on:
+      - zookeeper
+
+  # =================== Jenkins ===================
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    user: root
+    ports:
+      - "9090:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - JAVA_OPTS=-Duser.timezone=Asia/Seoul
+    networks:
+      - app-network
+
+volumes:
+  mysql_data:
+  mongodb_data:
+  redis_master_data:
+  zookeeper_data:
+  zookeeper_log:
+  kafka1_data:
+  kafka2_data:
+  kafka3_data:
+  jenkins_home:
