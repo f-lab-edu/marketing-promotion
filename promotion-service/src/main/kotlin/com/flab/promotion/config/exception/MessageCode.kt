@@ -14,4 +14,8 @@ enum class MessageCode(
     , PROMOTION_FULLY_BOOKED("PROMOTION_FULLY_BOOKED", "참여 가능한 횟수를 초과했습니다", HttpStatus.CONFLICT)
     , ALREADY_PARTICIPATED("ALREADY_PARTICIPATED", "이미 참여한 프로모션입니다", HttpStatus.CONFLICT)
     , PROMOTION_NOT_STARTED("PROMOTION_NOT_STARTED", "아직 참여 가능한 기간이 아닙니다", HttpStatus.BAD_REQUEST)
+    , PARTICIPATION_NOT_FOUND("PARTICIPATION_NOT_FOUND", "참여 이력이 없거나 이미 완료된 참여입니다", HttpStatus.NOT_FOUND)
+    , CONTENT_DEADLINE_EXPIRED("CONTENT_DEADLINE_EXPIRED", "콘텐츠 제출 기한이 초과되었습니다", HttpStatus.BAD_REQUEST)
+    , CONTENT_SUBMISSION_PERIOD_INVALID("CONTENT_SUBMISSION_PERIOD_INVALID", "콘텐츠 제출 가능한 기간이 아닙니다", HttpStatus.BAD_REQUEST)
+    , KAFKA_PUBLISH_FAILED("KAFKA_PUBLISH_FAILED", "참여 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요", HttpStatus.SERVICE_UNAVAILABLE)
 }

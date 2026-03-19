@@ -23,6 +23,7 @@ class PromotionRedisRepository(
         private const val FIELD_MAX_COUNT = "maxCount"
         private const val FIELD_START_AT = "startAt"
         private const val FIELD_END_AT = "endAt"
+        private const val FIELD_REWARD_AMOUNT = "rewardAmount"
 
         // Lua 스크립트 반환 코드
         const val RESULT_ALREADY_PARTICIPATED = -2L  // SET에 이미 존재
@@ -30,21 +31,12 @@ class PromotionRedisRepository(
         const val RESULT_SOLD_OUT = -3L              // 슬롯 소진
 
         /**
-         * 중복 체크 + 슬롯 차감을 원자적으로 처리하는 Lua 스크립트
-         *
-         * Redis는 싱글 스레드 + Lua 스크립트는 원자적으로 실행되므로
-         * 조건(읽기)을 먼저 확인하고 통과 시에만 수정한다 → 내부 롤백 불필요
+         * 중복 체크 + 슬롯 차감을 원자적으로 처리하는 Lua 스크립트 (비동기 Kafka 버전)
          *
          * KEYS[1]: participants SET 키
          * KEYS[2]: count 키
          * ARGV[1]: member (userId:yyyyMMdd)
          * ARGV[2]: SET TTL (초)
-         *
-         * 반환값:
-         *  -1 = 카운트 키 없음 (PROMOTION_NOT_FOUND)
-         *  -3 = 잔여 슬롯 없음 (PROMOTION_FULLY_BOOKED)
-         *  -2 = 이미 참여한 유저 (ALREADY_PARTICIPATED)
-         *  >= 0 = 차감 후 남은 슬롯 수 (성공)
          */
         private val CHECK_AND_DECREMENT_SCRIPT = RedisScript.of(
             """
@@ -53,24 +45,43 @@ class PromotionRedisRepository(
             local member   = ARGV[1]
             local ttl      = tonumber(ARGV[2])
 
-            -- 1. 카운트 키 존재 확인 (프로모션 만료 체크)
             if redis.call('EXISTS', countKey) == 0 then
                 return -1
             end
 
-            -- 2. 잔여 슬롯 확인 (수정 전 선제 체크)
             if tonumber(redis.call('GET', countKey)) <= 0 then
                 return -3
             end
 
-            -- 3. 중복 참여 체크
             if redis.call('SISMEMBER', setKey, member) == 1 then
                 return -2
             end
 
-            -- 4. 모든 조건 통과 → 수정 (실패 시 내부 롤백 불필요)
             redis.call('SADD', setKey, member)
             redis.call('EXPIRE', setKey, ttl)
+            return redis.call('DECR', countKey)
+            """.trimIndent(),
+            Long::class.java
+        )
+
+        /**
+         * 슬롯 차감만 수행하는 Lua 스크립트 (동기 DB 저장 버전)
+         * 중복 체크는 DB unique constraint + 분산락에서 처리하므로 SISMEMBER 불필요
+         *
+         * KEYS[1]: count 키
+         */
+        private val DECREMENT_SLOT_SCRIPT = RedisScript.of(
+            """
+            local countKey = KEYS[1]
+
+            if redis.call('EXISTS', countKey) == 0 then
+                return -1
+            end
+
+            if tonumber(redis.call('GET', countKey)) <= 0 then
+                return -3
+            end
+
             return redis.call('DECR', countKey)
             """.trimIndent(),
             Long::class.java
@@ -95,11 +106,11 @@ class PromotionRedisRepository(
 
     /**
      * 프로모션 등록 시 호출.
-     * - 캐시 키: promotion:{id}:info (Hash) → {maxCount, startAt, endAt}
+     * - 캐시 키: promotion:{id}:info (Hash) → {maxCount, startAt, endAt, rewardAmount}
      * - 슬롯 키: promotion:{id}:{startAt}   → maxCount (DECR 대상)
      * - TTL: 참여마감일시까지
      */
-    fun register(promotionId: Long, startAt: LocalDateTime, maxCount: Int, endAt: LocalDateTime) {
+    fun register(promotionId: Long, startAt: LocalDateTime, maxCount: Int, endAt: LocalDateTime, rewardAmount: Long) {
         val ttlSeconds = ChronoUnit.SECONDS.between(LocalDateTime.now(), endAt)
         if (ttlSeconds <= 0) return
 
@@ -109,7 +120,8 @@ class PromotionRedisRepository(
             mapOf(
                 FIELD_MAX_COUNT to maxCount.toString(),
                 FIELD_START_AT to startAt.format(DATETIME_FORMATTER),
-                FIELD_END_AT to endAt.format(DATETIME_FORMATTER)
+                FIELD_END_AT to endAt.format(DATETIME_FORMATTER),
+                FIELD_REWARD_AMOUNT to rewardAmount.toString()
             )
         )
         redisTemplate.expire(infoKey, ttlSeconds, TimeUnit.SECONDS)
@@ -128,7 +140,8 @@ class PromotionRedisRepository(
         return PromotionCacheInfo(
             maxCount = entries[FIELD_MAX_COUNT]?.toInt() ?: return null,
             startAt = LocalDateTime.parse(entries[FIELD_START_AT] ?: return null, DATETIME_FORMATTER),
-            endAt = LocalDateTime.parse(entries[FIELD_END_AT] ?: return null, DATETIME_FORMATTER)
+            endAt = LocalDateTime.parse(entries[FIELD_END_AT] ?: return null, DATETIME_FORMATTER),
+            rewardAmount = entries[FIELD_REWARD_AMOUNT]?.toLong() ?: return null
         )
     }
 
@@ -140,10 +153,7 @@ class PromotionRedisRepository(
     }
 
     /**
-     * 중복 참여 체크 + 슬롯 차감을 Lua 스크립트로 원자적 처리.
-     * SADD와 DECR 사이의 부분 실패 문제를 제거.
-     *
-     * 반환값: RESULT_ALREADY_PARTICIPATED / RESULT_NOT_FOUND / RESULT_SOLD_OUT / 0 이상(성공)
+     * 중복 참여 체크 + 슬롯 차감을 Lua 스크립트로 원자적 처리 (비동기 Kafka 버전).
      */
     fun checkAndDecrement(
         promotionId: Long,
@@ -159,6 +169,24 @@ class PromotionRedisRepository(
             "$userId:${date.format(DATE_FORMATTER)}",
             ttlSeconds.toString()
         ) ?: RESULT_NOT_FOUND
+    }
+
+    /**
+     * 슬롯 차감만 수행 (동기 DB 저장 버전).
+     * 중복 체크는 분산락 + DB unique constraint 에서 처리.
+     */
+    fun decrementSlot(promotionId: Long, startAt: LocalDateTime): Long {
+        return redisTemplate.execute(
+            DECREMENT_SLOT_SCRIPT,
+            listOf(buildCountKey(promotionId, startAt))
+        ) ?: RESULT_NOT_FOUND
+    }
+
+    /**
+     * 슬롯 복구 (DB 저장 실패 시 롤백).
+     */
+    fun incrementSlot(promotionId: Long, startAt: LocalDateTime) {
+        redisTemplate.opsForValue().increment(buildCountKey(promotionId, startAt))
     }
 
     /**

@@ -7,6 +7,7 @@ import com.flab.promotion.domain.dto.CreatePromotionResponse
 import com.flab.promotion.domain.enums.CompletionPolicy
 import com.flab.promotion.domain.enums.PolicyCode
 import com.flab.promotion.domain.mapper.PromotionMapper
+import com.flab.promotion.infrastructure.persistence.ParticipationPolicyRepository
 import com.flab.promotion.infrastructure.persistence.PromotionRepository
 import com.flab.promotion.infrastructure.redis.PromotionRedisRepository
 import org.springframework.stereotype.Service
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class AdminService(
     private val promotionRepository: PromotionRepository,
+    private val participationPolicyRepository: ParticipationPolicyRepository,
     private val redisRepository: PromotionRedisRepository,
     private val promotionMapper: PromotionMapper
 ) {
@@ -23,20 +25,22 @@ class AdminService(
         validateRequest(request)
 
         val promotion = promotionMapper.toPromotion(request)
+        val saved = promotionRepository.save(promotion)
 
+        // 연관관계 없이 promotionId FK 로 정책을 직접 저장
         request.policies.forEach { policyRequest ->
             validatePolicyRequest(policyRequest.policyCode, policyRequest.prerequisitePromotionId, policyRequest.personalParticipationLimit)
-            promotion.addPolicy(promotionMapper.toParticipationPolicy(policyRequest, request.adminId))
+            participationPolicyRepository.save(
+                promotionMapper.toParticipationPolicy(policyRequest, request.adminId, saved.id!!)
+            )
         }
-
-        // CascadeType.ALL: promotion 저장 시 policies 함께 INSERT
-        val saved = promotionRepository.save(promotion)
 
         redisRepository.register(
             promotionId = saved.id!!,
             startAt = saved.participationStartAt,
             maxCount = saved.maxParticipationCount,
-            endAt = saved.participationEndAt
+            endAt = saved.participationEndAt,
+            rewardAmount = saved.rewardAmount
         )
 
         return CreatePromotionResponse(promotionId = saved.id!!)
