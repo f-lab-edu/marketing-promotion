@@ -1,0 +1,23 @@
+# 로컬 개발용 오버라이드 (IDE에서 실행 시 -Dspring.profiles.active=local 또는 VM option 추가)
+#
+# 문제: application.yml 의 Redis Sentinel / Kafka 주소는 Docker 내부 네트워크 호스트명 사용
+#       (redis-sentinel1, kafka1 등) → 호스트에서 실행 시 DNS 해석 불가
+# 해결: Sentinel 대신 단일 Redis(localhost:6379) 사용, Kafka는 EXTERNAL 리스너 포트 사용
+#
+# 루트 docker-compose.yml 기준 포트 매핑:
+#   Redis master  : localhost:6379
+#   Kafka broker1 : localhost:29092
+#   Kafka broker2 : localhost:29093
+#   Kafka broker3 : localhost:29094
+
+spring:
+  data:
+    redis:
+      # Sentinel 비활성화: master 를 비워두면 Spring Boot 가 standalone 모드로 전환
+      sentinel:
+        master: ""
+        nodes: ""
+      host: localhost
+      port: 6379
+  kafka:
+    bootstrap-servers: localhost:29092,localhost:29093,localhost:29094

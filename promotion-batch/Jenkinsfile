@@ -1,0 +1,30 @@
+pipeline {
+    agent any
+
+    triggers {
+        cron('0 * * * *')   // 매 시간 정각 실행
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh './gradlew :promotion-batch:bootJar'
+            }
+        }
+
+        stage('Run Batch') {
+            steps {
+                sh 'java -jar promotion-batch/build/libs/promotion-batch-0.0.1-SNAPSHOT.jar'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Kafka 재처리 배치 완료'
+        }
+        failure {
+            echo 'Kafka 재처리 배치 실패 - 수동 확인 필요'
+        }
+    }
+}

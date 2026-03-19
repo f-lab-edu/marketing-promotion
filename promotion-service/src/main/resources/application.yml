@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: promotion-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/promotion_service?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: user
+    password: password
+  sql:
+    init:
+      mode: always
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+  data:
+    redis:
+      # Sentinel 구성 (Lua 스크립트 키 슬롯 제약 없음, 단일 마스터 HA)
+      sentinel:
+        master: mymaster
+        nodes: redis-sentinel1:26379,redis-sentinel2:26379,redis-sentinel3:26379
+      # Cluster 구성 사용 시 아래로 교체 (키에 해시태그 {promotionId} 적용 필요 - 현재 적용됨)
+      # cluster:
+      #   nodes: redis1:6379,redis2:6379,redis3:6379
+    mongodb:
+      uri: mongodb://localhost:27017/promotion_service
+      auto-index-creation: true
+  kafka:
+    bootstrap-servers: kafka1:9092,kafka2:9092,kafka3:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all           # 모든 ISR 레플리카 확인 후 ack (데이터 유실 방지)
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
+        enable.idempotence: true                      # 프로듀서 중복 전송 방지
+        max.in.flight.requests.per.connection: 5      # idempotence 활성화 시 최대 5
+    consumer:
+      group-id: promotion-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.value.default.type: com.flab.promotion.domain.dto.PromotionParticipationEvent
+        spring.json.trusted.packages: "com.flab.promotion.domain.dto"
+        max.poll.records: 100
+        session.timeout.ms: 30000
+    listener:
+      concurrency: 6    # 파티션 수와 동일하게 설정 (파티션당 스레드 1개)
+
+kafka:
+  topic:
+    participation:
+      name: promotion.participation
+      partitions: 6
+      replicas: 3
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
